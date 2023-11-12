@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "nomad-backup-operator"
+version = "0.0.1"
+description = ""
+authors = ["jaub <jaub@worm.business>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+urllib3 = "^1.26.16"
+python-nomad = "^2.0.0"
+requests-unixsocket = "^0.3.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
