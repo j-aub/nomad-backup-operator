@@ -1,10 +1,12 @@
+from jinja2.exceptions import TemplateSyntaxError
+from jinja2 import Template
+import logging
+from nomad.api.exceptions import BadRequestNomadException
 import re
 import sys
-import logging
-from jinja2 import Template
-from jinja2.exceptions import TemplateSyntaxError
 
 from nomad_backup_operator import config
+from nomad_backup_operator import nomad
 
 logger = logging.getLogger(__name__)
 # quality of life
@@ -14,7 +16,9 @@ def check_for_incorrect_meta(job_id, meta):
         'backup_cron',
         'backup_forget_keep_hourly',
         'backup_forget_keep_last',
+        'backup_forget_keep_daily',
         'backup_forget_keep_weekly',
+        'backup_forget_keep_monthly',
         'backup_forget_keep_yearly',
         'backup_hook',
         'backup_must_run',
@@ -22,67 +26,87 @@ def check_for_incorrect_meta(job_id, meta):
         'backup_upsteam_port',
         'backup_upstream_name',
         'backup_volume',
+        'backup_volume_rw',
         }
 
     for option in meta:
         if re.match('backup_.+', option) and option not in valid:
-            logger.warning( f'{job_id}: found invalid configuration key {option}!')
+            logger.warning( f'{job_id}: found invalid configuration key: {option}')
 
 # creates the backup job template
 def init():
+    success = False
     # all functions need access
     global template
     try:
         with open(config.TEMPLATE,'r') as template_file:
             template = Template(template_file.read())
+        success = True
     except PermissionError:
-        logger.error('Insufficient permissions to open the template file')
-        sys.exit(1)
+        logger.error('Insufficient permissions to open the template file!')
     except FileNotFoundError:
-        logger.error('The template file does not exist')
-        sys.exit(1)
+        logger.error('The template file does not exist!')
     except TemplateSyntaxError as e:
         logger.error(f'Failed to create the template object: {e}')
-        sys.exit(1)
+    
+    return success
 
+# Does a dry run of the entire job building process with dummy values. We
+# want to be sure that nothing will fail when deploying backup jobs for
+# real workloads
+def check_job_builder():
+    meta = {
+            'backup_cron': '2 0 * * *',
+            'backup_volume': 'testing-config',
+            'backup_hook': 'true',
+            'backup_forget_keep_last': '1',
+            'backup_must_run': 'true',
+            'backup_stop_job': 'true',
+            }
 
-# validates some basic assumptions about the base template
-# if they don't hold we shouldn't bother starting the event monitoring
-def check_base():
-    # we will template the template with some dummy values to see if
-    # anything breaks
-    backup_job_hcl = template.render(
-            backup_job_id='testing-backup',
-            backup_volume='testing-config',
-            )
-
-    backup_job = nomad.parse_job(backup_job_hcl)
-
-    return nomad.validate_job(backup_job)
+    return make_backup_job('testing', meta) is not None
 
 # create the base job that we will work off of
 def make_base(job_id, meta):
-    pass
+    backup_job = None
+
+    backup_volume_rw = (meta['backup_volume_rw'] if 'backup_volume_rw' in
+                        meta else 'true')
+
+    backup_job_hcl = template.render(
+            backup_job_id=job_id+'-backup',
+            backup_volume=meta['backup_volume'],
+            backup_volume_rw=backup_volume_rw,
+            )
+
+    try:
+        backup_job = nomad.parse_job(backup_job_hcl)
+    except BadRequestNomadException as e:
+        logger.warning(f'{job_id}: failed to parse the job: {e}')
+
+    return backup_job
 
 # creates an env dict
 def make_env(job_id, meta):
     # every backup job ought to know this
     env = {'JOB': job_id}
 
-    check_for_incorrect_meta(meta)
+    check_for_incorrect_meta(job_id, meta)
 
     # mapping of forget settings to env var
     forget_keep = {
         'backup_forget_keep_last': 'FORGET_KEEP_LAST',
         'backup_forget_keep_hourly': 'FORGET_KEEP_HOURLY',
+        'backup_forget_keep_daily': 'FORGET_KEEP_DAILY',
         'backup_forget_keep_weekly': 'FORGET_KEEP_WEEKLY',
+        'backup_forget_keep_monthly': 'FORGET_KEEP_MONTHLY',
         'backup_forget_keep_yearly': 'FORGET_KEEP_YEARLY',
         }
 
-    if 'backup_must_run' in job['Meta']:
+    if 'backup_must_run' in meta:
         env['MUST_RUN'] = meta['backup_must_run']
 
-    if 'backup_stop_job' in job['Meta']:
+    if 'backup_stop_job' in meta:
         env['STOP_JOB'] = meta['backup_stop_job']
 
     # if a script is provided, enable hook
@@ -92,6 +116,13 @@ def make_env(job_id, meta):
     # if any of the forgetting settings are set, enable forgetting
     if any(forget in meta for forget in forget_keep):
         env['FORGET'] = 'true'
+        # meta of: backup_forget_keep_hourly: 1
+        # becomes
+        # env of: FORGET_KEEP_HOURLY: 1
+        for forget in forget_keep:
+            if forget in meta:
+                env[forget_keep[forget]] = meta[forget]
+
 
     return env
 
@@ -99,11 +130,13 @@ def make_env(job_id, meta):
 def make_connect(meta):
     connect = {
             'SidecarService': {
-                'Upstreams': [
-                    {'DestinationName': meta['backup_upstream_name'],
-                    'LocalBindPort': meta['backup_upsteam_port'],
-                     }
-                    ]
+                'Proxy': {
+                    'Upstreams': [
+                        {'DestinationName': meta['backup_upstream_name'],
+                        'LocalBindPort': int(meta['backup_upsteam_port']),
+                         }
+                        ]
+                    }
                 }
             }
     return connect
@@ -120,11 +153,14 @@ def make_hook(meta):
 
 # creates a backup job dict for the input job
 def make_backup_job(job_id, meta):
-    return None
-    backup_job = make_base()
+    backup_job = make_base(job_id, meta)
+
+    if backup_job is None:
+        logger.warning(f'{job_id}: failed to create a base template')
+        return None
 
     # add the cron
-    job['Periodic'] = {
+    backup_job['Periodic'] = {
             'Spec': meta['backup_cron'],
             'SpecType': 'cron',
             }
@@ -139,19 +175,41 @@ def make_backup_job(job_id, meta):
             task['Env'] = task['Env']|env if task['Env'] else env
 
     # add the hook if necessary
-    if 'backup_hook' in job['Meta']:
+    if 'backup_hook' in meta:
         hook = make_hook(meta)
         for group in backup_job['TaskGroups']:
             for task in group['Tasks']:
                 # put the hook in
                 task['Templates'].append(hook)
 
-    if 'backup_upstream_name' in job['Meta'] and 'backup_upsteam_port' in job['Meta']:
+    if 'backup_upstream_name' in meta and 'backup_upsteam_port' in meta:
         connect = make_connect(meta)
         for group in backup_job['TaskGroups']:
             # TODO: if a service block isn't defined in the template then
-            # we're silently ignore the consul connect config
+            # we're silently ignoring the consul connect config
             for service in group['Services']:
                 service['Connect'] = service['Connect']|connect if service['Connect'] else connect
+    elif 'backup_upstream_name' in meta or 'backup_upsteam_port' in meta:
+        logger.warn(f'{job_id}: backup_upstream_name XOR backup_upsteam_port declared. Ignoring connect settings.')
+
+    # currently python-nomad forgets to convert the response to json..
+    validation = False
+    try:
+        validation = nomad.validate_job(backup_job).json()
+
+        if validation['Warnings']:
+            warning = validation['Warnings'].replace('\n','')
+            logger.warn(f'{job_id}: Job validation raised warning: {warning}')
+
+        if not validation['ValidationErrors'] is None:
+            # we don't want to deploy an invalid job
+            backup_job = None
+            for error in validation['ValidationErrors']:
+                error = error.replace('\n','')
+                logger.warn(f'{job_id}: Job validation raised error: {error}')
+
+    except BadRequestNomadException as e:
+        backup_job = None
+        logger.warning(f'{job_id}: validation failed: {e}')
 
     return backup_job

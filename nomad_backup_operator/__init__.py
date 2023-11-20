@@ -28,10 +28,19 @@ def main():
     urllib3.disable_warnings()
 
     configure_logging()
-    job_builder.init()
 
-    if not job_builder.check_base():
-        loggererror('the job template is invalid')
+    if not job_builder.init():
+        logger.error('failed to initialize the template')
         sys.exit(1)
+
+    if not job_builder.check_job_builder():
+        logger.error('the job template is invalid')
+        sys.exit(1)
+    else:
+        logger.info('backup job template sucessfully validated.')
+
+    logger.info('dealing with initial jobs')
+    nomad.create_existing()
+    logger.info('initial jobs done. Starting event loop')
 
     nomad.event_loop()
