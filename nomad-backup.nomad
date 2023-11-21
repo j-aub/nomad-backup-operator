@@ -41,11 +41,10 @@ job "{{ backup_job_id }}" {
       driver = "docker"
 
       config {
-        image = "docker.io/jaub/nomad-backup:0.1.1"
+        image = "docker.io/jaub/nomad-backup:0.1.2"
 
-        
-        command = "sleep"
-        args    = ["9999999"]
+        # command = "sleep"
+        # args    = ["9999999"]
         cap_drop = ["all"]
 
         security_opt = [

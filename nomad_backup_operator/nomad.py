@@ -1,6 +1,7 @@
 import logging
 import nomad
 import queue
+import os
 import re
 import requests_unixsocket
 import signal
@@ -8,7 +9,13 @@ import signal
 from nomad_backup_operator import job_builder
 
 logger = logging.getLogger(__name__)
-n = nomad.Nomad(session=requests_unixsocket.Session())
+# if we're running under nomad use the socket by default
+n = nomad.Nomad(session=requests_unixsocket.Session(),
+                    address=("http+unix://%2Fsecrets%2Fapi.sock" if not
+                             os.getenv("NOMAD_ADDR") and
+                        os.getenv("NOMAD_SECRETS_DIR") else
+                        os.getenv("NOMAD_ADDR")))
+
 
 # TODO: if the seen set is never cleaned we'll run out of memory!
 # we don't want to repeat the same events over and over
