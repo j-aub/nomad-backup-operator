@@ -27,7 +27,7 @@ job "{{ backup_job_id }}" {
 
     volume "backup" {
       type      = "host"
-      read_only = "{{ backup_volume_rw }}"
+      read_only = "{{ backup_volume_ro }}"
       source    = "{{ backup_volume }}"
     }
 

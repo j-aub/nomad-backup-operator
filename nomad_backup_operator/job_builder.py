@@ -26,7 +26,7 @@ def check_for_incorrect_meta(job_id, meta):
         'backup_upsteam_port',
         'backup_upstream_name',
         'backup_volume',
-        'backup_volume_rw',
+        'backup_volume_ro',
         }
 
     for option in meta:
@@ -70,13 +70,13 @@ def check_job_builder():
 def make_base(job_id, meta):
     backup_job = None
 
-    backup_volume_rw = (meta['backup_volume_rw'] if 'backup_volume_rw' in
+    backup_volume_ro = (meta['backup_volume_ro'] if 'backup_volume_ro' in
                         meta else 'true')
 
     backup_job_hcl = template.render(
             backup_job_id=job_id+'-backup',
             backup_volume=meta['backup_volume'],
-            backup_volume_rw=backup_volume_rw,
+            backup_volume_ro=backup_volume_ro,
             )
 
     try:

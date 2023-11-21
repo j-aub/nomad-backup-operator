@@ -18,7 +18,7 @@ job "nomad-backup-operator" {
       driver = "docker"
 
       config {
-        image = "docker.io/jaub/nomad-backup-operator:0.0.3"
+        image = "docker.io/jaub/nomad-backup-operator:0.0.4"
 
         # if we're already running as a regular user it's not really needed but
         # doesn't hurt

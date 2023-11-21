@@ -36,11 +36,9 @@ def stop_job(job_id):
 def handle_register(job_id):
     job = n.job[job_id]
 
-    # job has to be running
-    # not be an instance of a batch job
+    # job msut not be an instance of a batch job 
     # and not be a backup job
-    if (job['Status'] == 'running' and
-        job['ParentID'] == '' and
+    if (job['ParentID'] == '' and
         not re.match('.+-backup', job_id)):
 
         logger.info(f'found potential job with ID {job_id}')
@@ -65,11 +63,9 @@ def handle_register(job_id):
 def handle_deregister(job_id):
     job = n.job[job_id]
 
-    # job has to be dead
-    # not be an instance of a batch job
+    # job must not be an instance of a batch job
     # and not be a backup job
-    if (job['Status'] == 'dead' and
-        job['ParentID'] == '' and
+    if (job['ParentID'] == '' and
         not re.match('.+-backup', job_id)):
 
         logger.info(f'stopping backup job of job ID {job_id} if any')
