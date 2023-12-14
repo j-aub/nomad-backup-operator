@@ -30,7 +30,7 @@ def check_for_incorrect_meta(job_id, meta):
         }
 
     for option in meta:
-        if re.match('backup_.+', option) and option not in valid:
+        if re.match('backup_.*', option) and option not in valid:
             logger.warning( f'{job_id}: found invalid configuration key: {option}')
 
 # creates the backup job template
@@ -52,8 +52,8 @@ def init():
     return success
 
 # Does a dry run of the entire job building process with dummy values. We
-# want to be sure that nothing will fail when deploying backup jobs for
-# real workloads
+# want to be at least somewhat sure that nothing will fail when deploying
+# backup jobs for real workloads
 def check_job_builder():
     meta = {
             'backup_cron': '2 0 * * *',
@@ -171,7 +171,7 @@ def make_backup_job(job_id, meta):
     for group in backup_job['TaskGroups']:
         for task in group['Tasks']:
             # put the env in
-            # marge the dicts if some values are already filled out
+            # merge the dicts if some values are already filled out
             task['Env'] = task['Env']|env if task['Env'] else env
 
     # add the hook if necessary
@@ -192,9 +192,9 @@ def make_backup_job(job_id, meta):
     elif 'backup_upstream_name' in meta or 'backup_upsteam_port' in meta:
         logger.warn(f'{job_id}: backup_upstream_name XOR backup_upsteam_port declared. Ignoring connect settings.')
 
-    # currently python-nomad forgets to convert the response to json..
     validation = False
     try:
+        # currently python-nomad forgets to convert the response to json..
         validation = nomad.validate_job(backup_job).json()
 
         if validation['Warnings']:
