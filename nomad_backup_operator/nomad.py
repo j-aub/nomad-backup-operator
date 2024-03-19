@@ -22,7 +22,7 @@ n = nomad.Nomad(session=requests_unixsocket.Session(),
 seen = set()
 
 # creates job dict from hcl
-# raises BadRequestNomadException
+# raises BadRequestNomadException, URLNotFoundNomadException
 def parse_job(job_hcl):
     return n.jobs.parse(job_hcl, canonicalize=True)
 
@@ -34,7 +34,11 @@ def stop_job(job_id):
     n.job.deregister_job(job_id)
 
 def handle_register(job_id):
-    job = n.job[job_id]
+    try:
+        job = n.job[job_id]
+    except KeyError as e:
+        logger.warning(f'{job_id}: job could not be found: {e}')
+        return
 
     # job msut not be an instance of a batch job 
     # and not be a backup job

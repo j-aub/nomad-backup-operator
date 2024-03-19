@@ -2,7 +2,6 @@ from jinja2.exceptions import TemplateSyntaxError
 from jinja2 import Template
 import logging
 from nomad.api.exceptions import BadRequestNomadException
-import re
 import sys
 
 from nomad_backup_operator import config
@@ -30,7 +29,7 @@ def check_for_incorrect_meta(job_id, meta):
         }
 
     for option in meta:
-        if re.match('backup_.*', option) and option not in valid:
+        if option.startswith('backup_') and option not in valid:
             logger.warning( f'{job_id}: found invalid configuration key: {option}')
 
 # creates the backup job template
@@ -201,7 +200,7 @@ def make_backup_job(job_id, meta):
             warning = validation['Warnings'].replace('\n','')
             logger.warn(f'{job_id}: Job validation raised warning: {warning}')
 
-        if not validation['ValidationErrors'] is None:
+        if validation['ValidationErrors'] is not None:
             # we don't want to deploy an invalid job
             backup_job = None
             for error in validation['ValidationErrors']:
